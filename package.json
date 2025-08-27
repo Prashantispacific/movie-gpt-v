@@ -17,5 +17,6 @@
   },
   "keywords": ["movie", "ai", "chat", "tmdb", "openrouter"],
   "author": "Your Name",
-  "license": "MIT"
+  "license": "MIT",
+  "homepage": "https://movie-gpt-v-pqsl.onrender.com"
 }
