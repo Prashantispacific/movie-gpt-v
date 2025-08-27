@@ -24,7 +24,7 @@ const PORT = process.env.PORT || 3000;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
-// Movie-focused persona (based on your reference structure)
+// Movie-focused persona
 const moviePersona = {
   name: "MovieGPT Assistant",
   model: "meta-llama/llama-3.1-8b-instruct:free",
@@ -52,7 +52,7 @@ MOVIE EXPERTISE:
 Remember our entire conversation history and build meaningful movie discovery experiences.`
 };
 
-// Status endpoint (following your reference pattern)
+// Status endpoint
 app.get("/", (req, res) => {
   res.json({
     status: "MovieGPT Backend is running",
@@ -73,11 +73,11 @@ app.get("/api/test", (req, res) => {
   });
 });
 
-// Main chat endpoint (enhanced with your reference patterns)
+// Main chat endpoint
 app.post("/api/chat", async (req, res) => {
   const { message, messages } = req.body;
 
-  // Input validation (from your reference)
+  // Input validation
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: "Message is required" });
   }
@@ -90,7 +90,7 @@ app.post("/api/chat", async (req, res) => {
     // Get movie data from TMDB first
     const movieData = await searchMovieData(message);
 
-    // Build conversation with history (from your reference approach)
+    // Build conversation with history
     let conversationMessages = [];
 
     // Add system message (persona)
@@ -99,9 +99,8 @@ app.post("/api/chat", async (req, res) => {
       content: moviePersona.system_prompt
     });
 
-    // Add conversation history if provided (key for follow-up questions)
+    // Add conversation history if provided
     if (messages && Array.isArray(messages) && messages.length > 0) {
-      // Filter valid messages and add to conversation
       const validMessages = messages.filter(msg =>
         msg.role && msg.content &&
         (msg.role === 'user' || msg.role === 'assistant') &&
@@ -118,7 +117,7 @@ app.post("/api/chat", async (req, res) => {
 
     console.log(`Sending to OpenRouter: ${conversationMessages.length} messages`);
 
-    // OpenRouter API call (using your reference pattern)
+    // OpenRouter API call
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -178,7 +177,7 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// TMDB movie search function
+// TMDB movie search function - FIXED: Removed timeout options
 async function searchMovieData(query) {
   if (!TMDB_API_KEY) return null;
   
@@ -187,8 +186,8 @@ async function searchMovieData(query) {
     if (!cleanQuery) return null;
     
     const response = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanQuery)}&language=en-US`, {
-      method: 'GET',
-      timeout: 8000
+      method: 'GET'
+      // Removed: timeout: 8000
     });
     
     if (!response.ok) return null;
@@ -199,8 +198,8 @@ async function searchMovieData(query) {
       const movie = data.results[0];
       
       const detailResponse = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}&append_to_response=credits`, {
-        method: 'GET',
-        timeout: 8000
+        method: 'GET'
+        // Removed: timeout: 8000
       });
       
       if (!detailResponse.ok) return null;
@@ -242,7 +241,7 @@ function extractMovieQuery(message) {
 // Generate fallback response when AI fails
 function generateFallbackResponse(message, movieData) {
   if (movieData) {
-    return `Great choice! **${movieData.title}** (${movieData.year}) is a fantastic ${movieData.genre} film directed by ${movieData.director}. 
+    return `Great choice! **${movieData.title}** (${movieData.year}) is a fantastic ${movieData.genre} film directed by ${movieData.director}.
 
 🌟 **Rating**: ${movieData.rating}
 🎭 **Cast**: ${movieData.cast}
@@ -259,7 +258,7 @@ This movie is definitely worth watching! What would you like to know more about?
     return `🎃 Love horror movies? Here are some spine-chilling recommendations:
 
 • **The Conjuring** (2013) - Classic supernatural horror
-• **Hereditary** (2018) - Psychological terror at its finest  
+• **Hereditary** (2018) - Psychological terror at its finest
 • **Get Out** (2017) - Brilliant social thriller
 • **The Babadook** (2014) - Australian psychological horror
 
