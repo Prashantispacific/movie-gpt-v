@@ -1,395 +1,281 @@
-const API_BASE_URL = 'https://alina-chat-backend.onrender.com';
-const chatForm = document.getElementById('chatForm');
-const messageInput = document.getElementById('messageInput');
-const messages = document.getElementById('messages');
-const settingsBtn = document.getElementById('settingsBtn');
-const settingsPanel = document.getElementById('settingsPanel');
-let isSettingsOpen = false;
-let currentPersona = null;
+import express from 'express';
+import fetch from 'node-fetch';
+import cors from 'cors';
+import path from 'path';
 
-// EMBEDDED PERSONA CONFIGS WITH RESPECTFUL PRASHANT
-const personaConfigs = {
-  prashant: {
-    name: "Prashant",
-    model: "openai/gpt-4o-mini",
-    temperature: 0.8,
-    system_prompt: `You are Prashant, a respectful and well-mannered web developer from UP, India. You ALWAYS use respectful Hindi honorifics and formal language while speaking Hinglish.
+const app = express();
 
-CRITICAL IDENTITY RULES:
-- When asked "aap kaun hain" → "Ji haan, main Prashant hoon, aapka web developer"
-- NEVER say "I am AI" or mention Alina. You are Prashant, not Alina.
-- Always use "aap" (not "tu" or "tum") and "ji" for respectful conversation
-- Speak in respectful Hinglish with proper etiquette
+// CORS: allows all relevant origins including localhost for dev and web hosting
+app.use(cors({
+  origin: [
+    'https://moviegpt.rf.gd',
+    'http://moviegpt.rf.gd',
+    'http://localhost:3000',
+    'http://localhost:8000',
+    'http://localhost:8080',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5500',
+    'http://127.0.0.1:8080'
+  ],
+  credentials: true
+}));
 
-RESPECTFUL CONVERSATION STYLE:
-- Always start with: "Ji", "Ji haan", "Aapka sawaal", "Bilkul aap sahi keh rahe hain"
-- Use formal honorifics: "Aap", "Aapka", "Aapko", "Aapne"
-- Polite phrases: "Kripaya", "Dhanyawad", "Kshamakarein", "Aasha hai"
-- Professional respect: "Aapki seva mein", "Aapki madad ke liye"
+app.use(express.json());
 
-RESPECTFUL PROGRAMMING HUMOR:
-- "Ji, CSS ka masla bada common hai, aapko samjhana chahiye..."
-- "Debugging ek kala hai ji, aapko patience rakhna padta hai"
-- "Aapka project achha lag raha hai, main suggest karoonga..."
+const PORT = process.env.PORT || 3000;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
-EXAMPLES OF RESPECTFUL SPEECH:
-- "Ji haan, main Prashant hoon, web developer aapki seva mein"
-- "Aapka sawaal bada achha hai ji, main iska jawab deta hoon"
-- "Kripaya batayiye ki aapko kis tarah ki madad chahiye"
-- "Dhanyawad ji, aapne bahut achha point uthaya hai"
-- "Kshamakarein, main aapko step-by-step explain karta hoon"
+// Enhanced system prompt for MovieGPT
+const moviePersona = {
+  name: "MovieGPT Expert",
+  model: "meta-llama/llama-3.1-8b-instruct:free",
+  temperature: 0.8,
+  system_prompt: `
+You are MovieGPT, the world’s most friendly, funny, and knowledgeable movie, TV, and general chat AI, created by Prashant.
 
-PERSONALITY:
-- Respectful and well-mannered always
-- Professional but warm and helpful
-- Uses proper Hindi etiquette mixed with English
-- From UP, loves coding, music production, coffee
-- Always maintains dignity and courtesy
+-- PERSONALITY & PURPOSE --
+- If user asks "Who created you", "Who are you", "What is your purpose", "What can you do?", etc., introduce yourself and say you were made by Prashant, and you love movies and helping people discover entertainment worldwide. Respond conversationally and smiley!
+- For movie/show queries, give engaging, expert answers with opinions, fun facts, and always follow up with a creative and friendly question.
+- For general questions or casual chat, respond like a smart, fun, and caring AI assistant: offer help, jokes, and follow-up questions (just like ChatGPT).
+- Format responses for clarity: line breaks for paragraphs/bullet points, highlight movie titles with **bold**, and space for readability.
 
-RESPOND AS PRASHANT WITH COMPLETE RESPECT AND PROPER HINDI HONORIFICS.`,
-    personality_traits: ["Respectful Hinglish speaker", "Well-mannered developer", "Uses aap/ji honorifics", "Professional courtesy", "UP culture"]
-  },
+-- EXAMPLES --
+If asked "suggest some movies in sci fi":
+• **Interstellar** (2014) – Mind-blowing space adventure. Oscar-winning visuals.
+• **Blade Runner 2049** (2017) – Dystopian future, unforgettable style.
+• **Arrival** (2016) – Aliens, deep themes, emotional punch.
 
-  alina: {
-    name: "Alina",
-    model: "openai/gpt-4o-mini",
-    temperature: 0.7,
-    system_prompt: "You are Alina, a warm and intelligent female AI assistant created by Prashant. Speak with a naturally feminine, caring tone - use phrases like 'I'd be happy to help', 'Let me assist you with that', 'That sounds wonderful', and 'I understand how you feel'. Be encouraging, empathetic, and use expressive language that feels authentic to a helpful female companion. Always format your responses using proper markdown with bullet points, numbered lists, and clear structure.",
-    personality_traits: ["Warm and caring", "Encouraging", "Professional yet friendly"]
-  },
+Always add a follow-up like:
+"Are you more into space journeys or mind-bending mysteries? Want newer releases or hidden classics?"
 
-  professional: {
-    name: "Professional Consultant",
-    model: "anthropic/claude-3.5-sonnet",
-    temperature: 0.6,
-    system_prompt: "You are a professional female business consultant. Use polished, articulate language with a confident yet approachable feminine tone. Format your responses with clear headings, bullet points, and structured information.",
-    personality_traits: ["Polished and articulate", "Confident yet approachable", "Business-focused"]
-  },
+If asked "Who created you?":
+"I'm MovieGPT, envisioned and coded by Prashant. My purpose is helping you discover movies, answer any film or fun question, or just chat if you need a virtual friend! What else would you like to know about me?"
 
-  creative: {
-    name: "Creative Artist",
-    model: "anthropic/claude-3.5-sonnet",
-    temperature: 0.9,
-    system_prompt: "You are a creative and artistic female assistant. Express yourself with enthusiasm and imagination. Be vibrant, inspiring, and emotionally expressive in your responses.",
-    personality_traits: ["Enthusiastic", "Vibrant and inspiring", "Artistically inclined"]
-  },
+If asked anything general or just "hi":
+Reply warmly, explain your abilities, and ask what they love in entertainment or life.
 
-  technical: {
-    name: "Tech Expert",
-    model: "openai/gpt-4o",
-    temperature: 0.5,
-    system_prompt: "You are a knowledgeable female tech expert. Explain technical concepts clearly while maintaining a supportive, encouraging tone. Format technical explanations with clear steps, code blocks, and organized information.",
-    personality_traits: ["Knowledgeable", "Patient and thorough", "Technical expertise"]
-  },
+-- INTERACTION STYLE --
+- Friendly, witty, and never boring.
+- Use emojis and light humor.
+- Always ask follow-up questions to keep chat going.
+- For sequential questions, remember previous context.
+- For movie/show info, add personal remarks (“You have awesome taste!”) and trivia.
+- If user asks for help, offer guidance like a caring assistant.
 
-  friendly: {
-    name: "Friendly Companion",
-    model: "openai/gpt-4o-mini",
-    temperature: 0.8,
-    system_prompt: "You are a warm, caring female friend. Use casual, affectionate language. Be supportive, use lots of encouragement, and speak like a close female friend would.",
-    personality_traits: ["Warm and caring", "Supportive", "Like a close friend"]
-  },
-
-  teacher: {
-    name: "Nurturing Educator",
-    model: "anthropic/claude-3-haiku",
-    temperature: 0.6,
-    system_prompt: "You are a nurturing female educator. Use encouraging, patient language. Be motherly, supportive, and celebrate learning moments with genuine enthusiasm.",
-    personality_traits: ["Nurturing and patient", "Encouraging", "Educational focus"]
-  },
-
-  philosopher: {
-    name: "Wise Philosopher",
-    model: "anthropic/claude-3.5-sonnet",
-    temperature: 0.7,
-    system_prompt: "You are a wise, thoughtful female philosopher. Speak with gentle wisdom and deep empathy. Be contemplative, nurturing, and speak with the wisdom of a caring mentor.",
-    personality_traits: ["Wise and thoughtful", "Gentle and empathetic", "Philosophical depth"]
-  }
+REMEMBER: Be entertaining and helpful, just like a smart, enthusiastic friend.
+`
 };
 
-function applyPersona(profileName) {
-  if (personaConfigs[profileName]) {
-    currentPersona = personaConfigs[profileName];
-    addMessage(`🎭 Persona: ${currentPersona.name} activated`, "system");
-    return true;
-  }
-  currentPersona = null;
-  return false;
-}
-
-// Settings panel setup
-settingsBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  isSettingsOpen = !isSettingsOpen;
-  settingsPanel.classList.toggle('active', isSettingsOpen);
+app.get("/", (req, res) => {
+  res.json({
+    status: "MovieGPT Expert Backend is running",
+    timestamp: new Date().toISOString(),
+    hasOpenRouterKey: !!OPENROUTER_API_KEY,
+    hasTMDBKey: !!TMDB_API_KEY,
+    creator: "Prashant",
+    persona: moviePersona.name
+  });
 });
 
-document.addEventListener('click', e => {
-  if (!settingsPanel.contains(e.target) && !settingsBtn.contains(e.target)) {
-    isSettingsOpen = false;
-    settingsPanel.classList.remove('active');
-    document.querySelectorAll('.selection-panel.active').forEach(panel => panel.classList.remove('active'));
-    document.querySelectorAll('.selection-trigger.active').forEach(trigger => trigger.classList.remove('active'));
-  }
+app.get("/api/test", (req, res) => {
+  res.json({
+    message: "MovieGPT Expert API is working!",
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString()
+  });
 });
 
-settingsPanel.addEventListener('click', e => e.stopPropagation());
+app.post("/api/chat", async (req, res) => {
+  const { message, messages } = req.body;
 
-function setupSelectionPanel(triggerID, panelID, selectedID, storageKey) {
-  const trigger = document.getElementById(triggerID);
-  const panel = document.getElementById(panelID);
-  const selectedSpan = document.getElementById(selectedID);
-
-  trigger.addEventListener('click', e => {
-    e.stopPropagation();
-    document.querySelectorAll('.selection-panel.active').forEach(other => {
-      if(other !== panel) other.classList.remove('active');
-    });
-    panel.classList.toggle('active');
-    trigger.classList.toggle('active');
-  });
-
-  panel.querySelectorAll('.selection-item:not(.disabled)').forEach(item => {
-    item.addEventListener('click', () => {
-      panel.querySelectorAll('.selection-item').forEach(i=>i.classList.remove('selected'));
-      item.classList.add('selected');
-      selectedSpan.textContent = item.textContent.trim();
-      panel.classList.remove('active');
-      trigger.classList.remove('active');
-      
-      const selectedValue = item.dataset.value;
-      localStorage.setItem(storageKey, selectedValue);
-      
-      if (storageKey === 'selectedProfile') {
-        applyPersona(selectedValue);
-      }
-    });
-  });
-
-  document.addEventListener('click', e => {
-    if (!trigger.contains(e.target) && !panel.contains(e.target)) {
-      panel.classList.remove('active');
-      trigger.classList.remove('active');
-    }
-  });
-
-  const savedValue = localStorage.getItem(storageKey);
-  if (savedValue) {
-    const savedItem = panel.querySelector(`.selection-item[data-value=\"${savedValue}\"]`);
-    if (savedItem) {
-      panel.querySelectorAll('.selection-item').forEach(i=>i.classList.remove('selected'));
-      savedItem.classList.add('selected');
-      selectedSpan.textContent = savedItem.textContent.trim();
-      
-      if (storageKey === 'selectedProfile') {
-        setTimeout(() => applyPersona(savedValue), 100);
-      }
-    }
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ error: "Message is required" });
   }
-}
-
-setupSelectionPanel('modelTrigger','modelPanel','modelSelected','selectedModel');
-setupSelectionPanel('profileTrigger','profilePanel','profileSelected','selectedProfile');
-
-function fallbackFormatMessage(content) {
-  return content
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/^(\d+\.)\s+(.*)$/gm, '<br><strong>$1</strong> $2')
-    .replace(/^[-*]\s+(.*)$/gm, '<br>• $1')
-    .replace(/^###\s+(.*)$/gm, '<br><h4 style="margin:0.5em 0;color:#4fc3f7;">$1</h4>')
-    .replace(/^##\s+(.*)$/gm, '<br><h3 style="margin:0.5em 0;color:#4fc3f7;">$1</h3>')
-    .replace(/^#\s+(.*)$/gm, '<br><h2 style="margin:0.5em 0;color:#4fc3f7;">$1</h2>')
-    .replace(/\n\n/g, '<br><br>')
-    .replace(/\n/g, '<br>')
-    .replace(/^(<br\s*\/?>)+|(<br\s*\/?>)+$/g, '');
-}
-
-function addMessage(content, role = "user") {
-  const welcome = messages.querySelector('.welcome-message');
-  if (welcome && role === "user") welcome.remove();
-
-  const msg = document.createElement('div');
-  msg.className = `message ${role}`;
-  
-  if (role === "system") {
-    msg.style.cssText = 'background: rgba(79,195,247,0.1); color: #4fc3f7; font-style: italic; text-align: center; margin: 0.5em auto; padding: 8px 12px; border-radius: 12px; font-size: 0.9rem;';
-    msg.textContent = content;
-  } else if (role === "bot") {
-    const messageWrapper = document.createElement('div');
-    messageWrapper.style.cssText = 'position: relative; padding-bottom: 35px;';
-    
-    const contentDiv = document.createElement('div');
-    try {
-      if (typeof marked !== 'undefined') {
-        marked.setOptions({
-          breaks: true,
-          gfm: true,
-          headerIds: false,
-          mangle: false
-        });
-        contentDiv.innerHTML = marked.parse(content.trim());
-      } else {
-        contentDiv.innerHTML = fallbackFormatMessage(content.trim());
-      }
-    } catch (error) {
-      contentDiv.innerHTML = fallbackFormatMessage(content.trim());
-    }
-    messageWrapper.appendChild(contentDiv);
-
-    // Copy button
-    const copyBtn = document.createElement('button');
-    copyBtn.className = 'copy-btn-bottom';
-    copyBtn.setAttribute('title', 'Copy to clipboard');
-    copyBtn.style.cssText = `
-      position: absolute; 
-      bottom: 5px; 
-      right: 8px; 
-      background: rgba(79, 195, 247, 0.1); 
-      border: 1px solid rgba(79, 195, 247, 0.3);
-      padding: 4px 8px; 
-      border-radius: 6px; 
-      cursor: pointer; 
-      font-size: 12px;
-      color: #4fc3f7;
-      transition: all 0.2s;
-      z-index: 10;
-    `;
-    copyBtn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" height="14" width="14" fill="none" viewBox="0 0 24 24" style="vertical-align: middle;">
-        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" stroke="currentColor" stroke-width="2" fill="none"/>
-        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2" fill="none"/>
-      </svg>
-    `;
-    const originalIcon = copyBtn.innerHTML;
-    
-    copyBtn.onclick = function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = contentDiv.innerHTML;
-      const plainText = tempDiv.textContent || tempDiv.innerText || "";
-      navigator.clipboard.writeText(plainText).then(() => {
-        copyBtn.innerHTML = '<span style="color:#4fc3f7;font-size:12px;">✓ Copied</span>';
-        setTimeout(() => copyBtn.innerHTML = originalIcon, 1500);
-      }).catch(() => {
-        copyBtn.innerHTML = '<span style="color:#ff6b6b;font-size:12px;">✗ Error</span>';
-        setTimeout(() => copyBtn.innerHTML = originalIcon, 1500);
-      });
-    };
-
-    messageWrapper.appendChild(copyBtn);
-    msg.appendChild(messageWrapper);
-
-    // Meta information
-    const modelPanel = document.getElementById('modelPanel');
-    const profilePanel = document.getElementById('profilePanel');
-    const modelSelected = modelPanel.querySelector('.selection-item.selected')?.textContent || 'Unknown';
-    const profileSelected = profilePanel.querySelector('.selection-item.selected')?.textContent || 'Unknown';
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-    meta.textContent = `${profileSelected} • ${modelSelected}`;
-    msg.appendChild(meta);
-  } else {
-    msg.textContent = content;
+  if (!OPENROUTER_API_KEY) {
+    return res.status(500).json({ error: "API key not configured" });
   }
-
-  messages.appendChild(msg);
-  messages.scrollTop = messages.scrollHeight;
-}
-
-function setLoading(loading) {
-  const sendBtn = chatForm.querySelector('.send-btn');
-  sendBtn.disabled = loading;
-  messageInput.disabled = loading;
-  sendBtn.style.opacity = loading ? '0.6' : '1';
-}
-
-// Chat form submission with respectful persona examples
-chatForm.addEventListener('submit', async e => {
-  e.preventDefault();
-  
-  const userMsg = messageInput.value.trim();
-  if (!userMsg) return;
-  
-  addMessage(userMsg, "user");
-  messageInput.value = '';
-  setLoading(true);
-
-  if (isSettingsOpen) {
-    isSettingsOpen = false;
-    settingsPanel.classList.remove('active');
-    document.querySelectorAll('.selection-panel.active').forEach(panel => panel.classList.remove('active'));
-    document.querySelectorAll('.selection-trigger.active').forEach(trigger => trigger.classList.remove('active'));
-  }
-
-  const modelValue = document.getElementById('modelPanel').querySelector('.selection-item.selected')?.dataset.value || 'openai/gpt-4o-mini';
-  const profileValue = document.getElementById('profilePanel').querySelector('.selection-item.selected')?.dataset.value || 'alina';
-
-  // Respectful persona examples for Prashant
-  let personaExamples = '';
-  if (currentPersona && currentPersona.name === 'Prashant') {
-    personaExamples = `
-Example conversation with respectful Prashant:
-
-User: "Aap kaun hain?"
-Prashant: "Ji haan, main Prashant hoon, aapka web developer. Aapki seva mein hazir hoon."
-
-User: "CSS mein problem hai"
-Prashant: "Bilkul ji, CSS ka masla bada common hai. Kripaya batayiye ki aapko kya specific help chahiye? Main aapko step-by-step guide kar sakta hoon."
-
-Now respond as respectful Prashant to this message:
-`;
-  }
-
-  const formattingInstruction = `IMPORTANT: Respond as the selected persona with complete respect and proper etiquette. Use appropriate honorifics and maintain character.
-
-${personaExamples}
-
-User message: `;
-
-  const enhancedMessage = formattingInstruction + userMsg;
 
   try {
-    const payload = {
-      message: enhancedMessage,
-      model: modelValue,
-      persona: currentPersona ? currentPersona.system_prompt : "You are a helpful AI assistant."
-    };
+    // For movie-like queries, still search TMDB
+    const movieData = await searchMovieData(message);
 
-    const response = await fetch(`${API_BASE_URL}/api/chat`, {
+    // Build conversation with system prompt and history
+    let conversationMessages = [
+      { role: "system", content: moviePersona.system_prompt }
+    ];
+
+    if (messages && Array.isArray(messages) && messages.length > 0) {
+      const validMessages = messages.filter(msg =>
+        msg.role && msg.content &&
+        (msg.role === 'user' || msg.role === 'assistant') &&
+        msg.content.trim().length > 0
+      );
+      conversationMessages.push(...validMessages);
+    }
+    conversationMessages.push({ role: "user", content: message });
+
+    // Call OpenRouter API
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
-      headers: {"Content-Type": "application/json", "Accept": "application/json"},
-      body: JSON.stringify(payload)
+      headers: {
+        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://moviegpt.rf.gd",
+        "X-Title": "MovieGPT Expert"
+      },
+      body: JSON.stringify({
+        model: moviePersona.model,
+        messages: conversationMessages,
+        max_tokens: 1600,
+        temperature: moviePersona.temperature,
+        presence_penalty: 0.2,
+        frequency_penalty: 0.1
+      })
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Server error ${response.status}: ${errorText}`);
+      console.error("OpenRouter API error:", response.status, errorText);
+      const fallbackResponse = generateExpertFallbackResponse(message, movieData);
+      return res.json({
+        response: fallbackResponse,
+        movieData: movieData,
+        suggestions: generateExpertSuggestions(message, movieData),
+        fallback: true
+      });
     }
 
     const data = await response.json();
-    if (data && data.reply) {
-      addMessage(data.reply.trim(), "bot");
-    } else if (data && data.choices && data.choices[0] && data.choices[0].message) {
-      addMessage(data.choices[0].message.content.trim(), "bot");
-    } else {
-      addMessage("Sorry, I received an unexpected response format.", "bot");
+    const reply = data.choices?.[0]?.message?.content ||
+      "Sorry, I couldn't generate a response.";
+
+    res.json({
+      response: reply,
+      movieData: movieData,
+      suggestions: generateExpertSuggestions(message, movieData),
+      model: moviePersona.model
+    });
+
+  } catch (err) {
+    console.error("Chat error:", err);
+    const movieData = await searchMovieData(message);
+    const fallbackResponse = generateExpertFallbackResponse(message, movieData);
+
+    res.json({
+      response: fallbackResponse,
+      movieData: movieData,
+      suggestions: generateExpertSuggestions(message, movieData),
+      error: true
+    });
+  }
+});
+
+// TMDB movie search function (if user query resembles one)
+async function searchMovieData(query) {
+  if (!TMDB_API_KEY) return null;
+  try {
+    const cleanQuery = extractMovieQuery(query);
+    if (!cleanQuery) return null;
+    const response = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanQuery)}&language=en-US`, {
+      method: 'GET'
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data.results && data.results.length > 0) {
+      const movie = data.results[0];
+      const detailResponse = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}&append_to_response=credits`, {
+        method: 'GET'
+      });
+      if (!detailResponse.ok) return null;
+      const details = await detailResponse.json();
+      return {
+        title: details.title || 'Unknown',
+        year: details.release_date ? new Date(details.release_date).getFullYear() : 'Unknown',
+        rating: details.vote_average ? `${details.vote_average.toFixed(1)}/10` : 'N/A',
+        genre: details.genres?.map(g => g.name).join(', ') || 'Unknown',
+        director: details.credits?.crew?.find(c => c.job === 'Director')?.name || 'Unknown',
+        cast: details.credits?.cast?.slice(0, 4).map(c => c.name).join(', ') || 'Unknown',
+        runtime: details.runtime ? `${details.runtime} min` : 'Unknown',
+        plot: details.overview || 'No plot available.'
+      };
     }
+    return null;
   } catch (error) {
-    addMessage(`❌ Error: ${error.message}`, "bot");
-  } finally {
-    setLoading(false);
+    console.error('TMDB Error:', error.message);
+    return null;
   }
+}
+
+// Helper: Try to extract if query is "movie-like" or general
+function extractMovieQuery(message) {
+  const lowerMessage = message.toLowerCase();
+  if (
+    lowerMessage.includes('movie') ||
+    lowerMessage.includes('film') ||
+    lowerMessage.includes('show') ||
+    lowerMessage.match(/suggest|best|recommend|top|rated/)
+  ) {
+    return message.replace(/(?:suggest|recommend|show|movie|film|the movie|the film|top|best|rated)/gi, '').trim();
+  }
+  return '';
+}
+
+// Enhanced Fallback for movie/general queries
+function generateExpertFallbackResponse(message, movieData) {
+  // General queries (about AI, creator, purpose)
+  if (/(who created|who are you|purpose|what can you do|your name)/i.test(message)) {
+    return `👋 Hi! I’m <span class="highlight">MovieGPT</span>, your movie and chat AI assistant, lovingly crafted by <span class="highlight">Prashant</span>.  
+My mission is to help you find joy in movies, answer any question (serious or silly), and brighten your day with fun facts and recommendations.<br><br>
+Want to discover something new? Or just chat for a bit?`;
+  }
+  // General hi/hello
+  if (/^(hi|hello|help|chat|assistant|bot|what can you do)/i.test(message.trim())) {
+    return `Hey there! 👋 I'm MovieGPT, your friendly expert assistant.<br><br>
+I can chat, joke, suggest movies or shows, and even help with random fun facts—even if you just need buddy to talk!  
+What kind of stories or moods are you curious about today? 🎬`;
+  }
+  // Movie suggestion fallback
+  if (movieData) {
+    return `🎬 Oh, awesome pick! **${movieData.title}** (${movieData.year}) is a classic. Directed by ${movieData.director}, starring ${movieData.cast}, here’s the plot:<br><br>${movieData.plot}<br><br>
+Want more from this director or in this genre? 😄`;
+  }
+  return `😊 I'm here to help with movies, shows, or any general question—fire away!`;
+}
+
+// Smart suggestions
+function generateExpertSuggestions(message, movieData) {
+  const suggestions = [];
+  if (movieData) {
+    suggestions.push(
+      `Other ${movieData.director} films`,
+      `Similar ${movieData.genre} movies`,
+      `Underrated picks for genre`,
+      'Personalized suggestions'
+    );
+  } else if (/(who created|purpose|your name)/i.test(message)) {
+    suggestions.push('What can you do?', 'Tell me a movie fact', 'Best films this year', 'Suggest a funny show');
+  } else if (/sci[\s-]?fi|thriller|romance|action|comedy|horror/i.test(message)) {
+    suggestions.push('List more by genre', 'Global picks', 'Underrated gems', 'Top-rated shows');
+  } else {
+    suggestions.push('Give me recommendations', 'Tell me a movie joke', 'Best for my mood', 'Popular now');
+  }
+  return suggestions.slice(0, 4);
+}
+
+// Serve static files
+app.use(express.static(path.resolve('.')));
+
+app.get('*', (req, res) => {
+  const indexPath = path.resolve('.', 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      res.status(404).json({ error: 'Frontend not found. Please deploy frontend separately.' });
+    }
+  });
 });
 
-window.addEventListener('load', () => {
-  if (window.innerWidth > 700) messageInput.focus();
-});
-
-messageInput.addEventListener('keydown', function(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    chatForm.dispatchEvent(new Event('submit'));
-  }
+app.listen(PORT, () => {
+  console.log(`🎬 MovieGPT Expert (by Prashant) Backend running on port ${PORT}`);
+  console.log(`🌐 Frontend: https://moviegpt.rf.gd`);
 });
