@@ -20,6 +20,7 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
+    url: 'https://movie-gpt-v-pqsl.onrender.com',
     apis: {
       openrouter: !!OPENROUTER_API_KEY,
       tmdb: !!TMDB_API_KEY
@@ -27,7 +28,18 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Chat endpoint - FIXED
+// Debug endpoint
+app.get('/api/debug', (req, res) => {
+  res.json({
+    openrouterKey: OPENROUTER_API_KEY ? `${OPENROUTER_API_KEY.substring(0, 8)}...` : 'MISSING',
+    tmdbKey: TMDB_API_KEY ? `${TMDB_API_KEY.substring(0, 8)}...` : 'MISSING',
+    nodeEnv: process.env.NODE_ENV,
+    baseUrl: 'https://movie-gpt-v-pqsl.onrender.com',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Chat endpoint
 app.post('/api/chat', async (req, res) => {
   try {
     const { message } = req.body;
@@ -78,7 +90,7 @@ async function searchMovieData(query) {
     });
     
     if (response.data.results && response.data.results.length > 0) {
-      const movie = response.data.results;
+      const movie = response.data.results[0];
       
       const detailResponse = await axios.get(`https://api.themoviedb.org/3/movie/${movie.id}`, {
         params: {
@@ -121,70 +133,65 @@ function extractMovieQuery(message) {
   return message.trim();
 }
 
-// FIXED: Proper OpenRouter API call
+// SIMPLIFIED DEBUG VERSION
 async function generateAIResponse(message, movieData) {
   if (!OPENROUTER_API_KEY) {
+    console.log('❌ No OpenRouter API key found');
     return 'Hi! I\'m MovieGPT. Ask me about any movie, actor, or get recommendations! 🎬';
   }
   
   try {
-    // Build proper messages array - FIXED FORMATTING
-    const messages = [
-      {
-        role: 'system',
-        content: 'You are MovieGPT, a friendly and enthusiastic movie assistant. Be helpful, add some humor, and encourage movie discovery. Keep responses conversational and under 200 words.'
-      }
-    ];
-
-    // Build user message with movie context if available
-    let userContent = `User asked: "${message}"`;
-    
-    if (movieData) {
-      userContent += `\n\nMovie information found:
-- ${movieData.title} (${movieData.year})
-- Rating: ${movieData.rating}
-- Genre: ${movieData.genre}
-- Director: ${movieData.director}
-- Cast: ${movieData.cast}
-- Plot: ${movieData.plot}
-
-Please provide an enthusiastic response about this movie with interesting insights.`;
-    } else {
-      userContent += `\n\nPlease help with movie recommendations, information about actors/directors, or general movie trivia. Be enthusiastic and engaging!`;
-    }
-
-    messages.push({
-      role: 'user',
-      content: userContent // FIXED: Ensure content is always a string
-    });
-
-    console.log('Sending to OpenRouter:', JSON.stringify({ messages }, null, 2));
-    
-    const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+    // Create minimal, clean payload
+    const payload = {
       model: 'meta-llama/llama-3.1-8b-instruct:free',
-      messages: messages, // FIXED: Properly formatted messages
-      max_tokens: 250,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are MovieGPT, a friendly movie assistant. Be helpful and concise.'
+        },
+        {
+          role: 'user', 
+          content: String(message) // Ensure it's a string
+        }
+      ],
+      max_tokens: 150,
       temperature: 0.7
-    }, {
-      headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://movie-gpt-v.onrender.com',
-        'X-Title': 'MovieGPT'
-      },
+    };
+
+    // Log the exact payload being sent
+    console.log('🔍 Payload being sent to OpenRouter:');
+    console.log(JSON.stringify(payload, null, 2));
+    
+    // Headers with updated referer
+    const headers = {
+      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://movie-gpt-v-pqsl.onrender.com',
+      'X-Title': 'MovieGPT'
+    };
+    
+    console.log('📤 Sending request to OpenRouter...');
+    
+    const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', payload, {
+      headers: headers,
       timeout: 15000
     });
     
-    return response.data.choices.message.content.trim();
+    console.log('✅ OpenRouter response received');
+    
+    const aiResponse = response.data.choices[0].message.content.trim();
+    console.log('AI Response:', aiResponse);
+    
+    return aiResponse;
     
   } catch (error) {
-    console.error('OpenRouter Error:', error.response?.data || error.message);
+    console.error('❌ OpenRouter Error Details:');
+    console.error('Error message:', error.message);
+    console.error('Response status:', error.response?.status);
+    console.error('Response data:', JSON.stringify(error.response?.data, null, 2));
     
-    if (movieData) {
-      return `Great choice! ${movieData.title} (${movieData.year}) is a fantastic ${movieData.genre} film directed by ${movieData.director}. It has a ${movieData.rating} rating and features an amazing cast including ${movieData.cast}. What would you like to know more about? 🎬`;
-    }
-    
-    return 'I\'m having trouble with my AI brain right now 🧠 But I\'d love to help you discover amazing movies! Try asking about a specific film, actor, or genre.';
+    // Return fallback message
+    return `I'm having trouble connecting to my AI brain right now 🧠 But I'd love to help you with movies! Try asking about a specific film or actor.`;
   }
 }
 
@@ -221,6 +228,7 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🎬 MovieGPT server running on port ${PORT}`);
+  console.log(`🌐 URL: https://movie-gpt-v-pqsl.onrender.com`);
   console.log(`🔑 OpenRouter: ${OPENROUTER_API_KEY ? 'Configured ✅' : 'Missing ❌'}`);
   console.log(`🎭 TMDB: ${TMDB_API_KEY ? 'Configured ✅' : 'Missing ❌'}`);
 });
