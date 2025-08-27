@@ -13,7 +13,9 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve static files from current directory (NOT public folder)
+app.use(express.static(__dirname));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -73,6 +75,8 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// [Your existing functions: searchMovieData, extractMovieQuery, generateAIResponse, generateSuggestions remain the same]
+
 async function searchMovieData(query) {
   if (!TMDB_API_KEY) return null;
   
@@ -90,7 +94,7 @@ async function searchMovieData(query) {
     });
     
     if (response.data.results && response.data.results.length > 0) {
-      const movie = response.data.results[0];
+      const movie = response.data.results;
       
       const detailResponse = await axios.get(`https://api.themoviedb.org/3/movie/${movie.id}`, {
         params: {
@@ -133,66 +137,70 @@ function extractMovieQuery(message) {
   return message.trim();
 }
 
-// SIMPLIFIED DEBUG VERSION
+// TEMPORARY FALLBACK - No OpenRouter dependency
 async function generateAIResponse(message, movieData) {
-  if (!OPENROUTER_API_KEY) {
-    console.log('❌ No OpenRouter API key found');
-    return 'Hi! I\'m MovieGPT. Ask me about any movie, actor, or get recommendations! 🎬';
+  console.log('🎬 Processing message:', message);
+  
+  // If we have movie data, create a response about it
+  if (movieData) {
+    return `Great choice! **${movieData.title}** (${movieData.year}) is a fantastic ${movieData.genre} film directed by ${movieData.director}. 
+
+🌟 **Rating**: ${movieData.rating}
+🎭 **Cast**: ${movieData.cast}
+⏱️ **Runtime**: ${movieData.runtime}
+
+${movieData.plot}
+
+This movie is definitely worth watching! What would you like to know more about?`;
   }
   
-  try {
-    // Create minimal, clean payload
-    const payload = {
-      model: 'meta-llama/llama-3.1-8b-instruct:free',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are MovieGPT, a friendly movie assistant. Be helpful and concise.'
-        },
-        {
-          role: 'user', 
-          content: String(message) // Ensure it's a string
-        }
-      ],
-      max_tokens: 150,
-      temperature: 0.7
-    };
+  // General movie responses based on keywords
+  const lowerMessage = message.toLowerCase();
+  
+  if (lowerMessage.includes('horror') || lowerMessage.includes('scary')) {
+    return `🎃 Love horror movies? Here are some spine-chilling recommendations:
 
-    // Log the exact payload being sent
-    console.log('🔍 Payload being sent to OpenRouter:');
-    console.log(JSON.stringify(payload, null, 2));
-    
-    // Headers with updated referer
-    const headers = {
-      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://movie-gpt-v-pqsl.onrender.com',
-      'X-Title': 'MovieGPT'
-    };
-    
-    console.log('📤 Sending request to OpenRouter...');
-    
-    const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', payload, {
-      headers: headers,
-      timeout: 15000
-    });
-    
-    console.log('✅ OpenRouter response received');
-    
-    const aiResponse = response.data.choices[0].message.content.trim();
-    console.log('AI Response:', aiResponse);
-    
-    return aiResponse;
-    
-  } catch (error) {
-    console.error('❌ OpenRouter Error Details:');
-    console.error('Error message:', error.message);
-    console.error('Response status:', error.response?.status);
-    console.error('Response data:', JSON.stringify(error.response?.data, null, 2));
-    
-    // Return fallback message
-    return `I'm having trouble connecting to my AI brain right now 🧠 But I'd love to help you with movies! Try asking about a specific film or actor.`;
+• **The Conjuring** (2013) - Classic supernatural horror
+• **Hereditary** (2018) - Psychological terror at its finest  
+• **Get Out** (2017) - Brilliant social thriller
+• **The Babadook** (2014) - Australian psychological horror
+
+What type of scares are you in the mood for? 👻`;
   }
+  
+  if (lowerMessage.includes('comedy') || lowerMessage.includes('funny')) {
+    return `😂 Need a good laugh? Check out these comedies:
+
+• **The Grand Budapest Hotel** (2014) - Wes Anderson's whimsical masterpiece
+• **Knives Out** (2019) - Murder mystery with perfect comedy timing
+• **Parasite** (2019) - Dark comedy that won Best Picture
+• **Hunt for the Wilderpeople** (2016) - Heartwarming New Zealand adventure
+
+What kind of humor makes you laugh? 🎭`;
+  }
+  
+  if (lowerMessage.includes('action')) {
+    return `💥 Action-packed recommendations coming up:
+
+• **Mad Max: Fury Road** (2015) - Non-stop vehicular mayhem
+• **John Wick** (2014) - Stylish revenge thriller
+• **Mission: Impossible - Fallout** (2018) - Tom Cruise at his most daring
+• **The Raid** (2011) - Indonesian martial arts masterpiece
+
+Ready for some adrenaline? 🚗💨`;
+  }
+  
+  // Default response
+  return `🎬 Hi there! I'm MovieGPT, your friendly movie assistant. I can help you with:
+
+• **Movie recommendations** based on your mood
+• **Information** about actors, directors, and films
+• **Reviews and ratings** to help you decide what to watch
+• **Fun movie trivia** and behind-the-scenes facts
+
+Try asking me about a specific movie, actor, or tell me what genre you're in the mood for! 🍿
+
+What kind of movie experience are you looking for today?`;
 }
 
 function generateSuggestions(message, movieData) {
@@ -221,9 +229,9 @@ function generateSuggestions(message, movieData) {
   return suggestions.slice(0, 4);
 }
 
-// Serve frontend
+// Serve index.html for all other routes (SPA behavior)
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.listen(PORT, () => {
