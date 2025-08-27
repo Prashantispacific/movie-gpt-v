@@ -1,82 +1,184 @@
-const express = require('express');
-const axios = require('axios');
-const path = require('path');
-const cors = require('cors');
+import express from 'express';
+import fetch from 'node-fetch';
+import cors from 'cors';
+import path from 'path';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// Environment variables
+// CORS configuration
+app.use(cors({
+  origin: [
+    'https://moviegpt.rf.gd',
+    'http://moviegpt.rf.gd',
+    'http://localhost:3000',
+    'http://localhost:8000',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5500'
+  ],
+  credentials: true
+}));
+
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Movie-focused persona (based on your reference structure)
+const moviePersona = {
+  name: "MovieGPT Assistant",
+  model: "meta-llama/llama-3.1-8b-instruct:free",
+  temperature: 0.7,
+  system_prompt: `You are MovieGPT, a friendly and enthusiastic movie assistant.
 
-// Serve static files from current directory (NOT public folder)
-app.use(express.static(__dirname));
+FOLLOW-UP BEHAVIOR (like ChatGPT):
+- Ask thoughtful follow-up questions about movie preferences
+- Reference previous conversation naturally: "Earlier you mentioned...", "Based on your interest in..."
+- Show genuine curiosity: "What genres do you usually enjoy?", "Any particular decade of movies?"
+- Be encouraging and provide personalized recommendations
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+PERSONALITY:
+- Warm, enthusiastic tone about movies and entertainment
+- Use phrases like "Great choice!", "I'd recommend...", "You might also enjoy..."
+- Format responses with clear structure using emojis and bullet points
+- Always maintain a helpful, professional yet friendly demeanor
+
+MOVIE EXPERTISE:
+- Provide detailed movie information including cast, director, ratings, plot
+- Offer personalized recommendations based on user preferences
+- Share interesting trivia and behind-the-scenes facts
+- Help users discover new movies across all genres and eras
+
+Remember our entire conversation history and build meaningful movie discovery experiences.`
+};
+
+// Status endpoint (following your reference pattern)
+app.get("/", (req, res) => {
+  res.json({
+    status: "MovieGPT Backend is running",
     timestamp: new Date().toISOString(),
-    url: 'https://movie-gpt-v-pqsl.onrender.com',
-    apis: {
-      openrouter: !!OPENROUTER_API_KEY,
-      tmdb: !!TMDB_API_KEY
-    }
+    hasOpenRouterKey: !!OPENROUTER_API_KEY,
+    hasTMDBKey: !!TMDB_API_KEY,
+    frontend: "https://moviegpt.rf.gd",
+    persona: moviePersona.name
   });
 });
 
-// Debug endpoint
-app.get('/api/debug', (req, res) => {
+// Test endpoint
+app.get("/api/test", (req, res) => {
   res.json({
-    openrouterKey: OPENROUTER_API_KEY ? `${OPENROUTER_API_KEY.substring(0, 8)}...` : 'MISSING',
-    tmdbKey: TMDB_API_KEY ? `${TMDB_API_KEY.substring(0, 8)}...` : 'MISSING',
-    nodeEnv: process.env.NODE_ENV,
-    baseUrl: 'https://movie-gpt-v-pqsl.onrender.com',
+    message: "MovieGPT API is working!",
+    origin: req.headers.origin,
     timestamp: new Date().toISOString()
   });
 });
 
-// Chat endpoint
-app.post('/api/chat', async (req, res) => {
+// Main chat endpoint (enhanced with your reference patterns)
+app.post("/api/chat", async (req, res) => {
+  const { message, messages } = req.body;
+
+  // Input validation (from your reference)
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ error: "Message is required" });
+  }
+
+  if (!OPENROUTER_API_KEY) {
+    return res.status(500).json({ error: "API key not configured" });
+  }
+
   try {
-    const { message } = req.body;
-    
-    if (!message || typeof message !== 'string' || message.trim().length === 0) {
-      return res.status(400).json({ error: 'Valid message is required' });
+    // Get movie data from TMDB first
+    const movieData = await searchMovieData(message);
+
+    // Build conversation with history (from your reference approach)
+    let conversationMessages = [];
+
+    // Add system message (persona)
+    conversationMessages.push({
+      role: "system",
+      content: moviePersona.system_prompt
+    });
+
+    // Add conversation history if provided (key for follow-up questions)
+    if (messages && Array.isArray(messages) && messages.length > 0) {
+      // Filter valid messages and add to conversation
+      const validMessages = messages.filter(msg =>
+        msg.role && msg.content &&
+        (msg.role === 'user' || msg.role === 'assistant') &&
+        msg.content.trim().length > 0
+      );
+      conversationMessages.push(...validMessages);
     }
 
-    console.log('Processing message:', message);
+    // Add current message
+    conversationMessages.push({
+      role: "user",
+      content: message
+    });
+
+    console.log(`Sending to OpenRouter: ${conversationMessages.length} messages`);
+
+    // OpenRouter API call (using your reference pattern)
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://moviegpt.rf.gd",
+        "X-Title": "MovieGPT"
+      },
+      body: JSON.stringify({
+        model: moviePersona.model,
+        messages: conversationMessages,
+        max_tokens: 1000,
+        temperature: moviePersona.temperature,
+        presence_penalty: 0.1,
+        frequency_penalty: 0.1
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("OpenRouter API error:", response.status, errorText);
+      
+      // Fallback response when API fails
+      const fallbackResponse = generateFallbackResponse(message, movieData);
+      return res.json({
+        response: fallbackResponse,
+        movieData: movieData,
+        suggestions: generateSuggestions(message, movieData),
+        fallback: true
+      });
+    }
+
+    const data = await response.json();
+    const reply = data.choices?.[0]?.message?.content ||
+      "Sorry, I couldn't generate a response.";
+
+    res.json({
+      response: reply,
+      movieData: movieData,
+      suggestions: generateSuggestions(message, movieData),
+      model: moviePersona.model
+    });
+
+  } catch (err) {
+    console.error("Chat error:", err);
     
-    // Get movie data
+    // Fallback when everything fails
     const movieData = await searchMovieData(message);
-    
-    // Generate AI response
-    const aiResponse = await generateAIResponse(message, movieData);
-    
-    // Generate suggestions
-    const suggestions = generateSuggestions(message, movieData);
+    const fallbackResponse = generateFallbackResponse(message, movieData);
     
     res.json({
-      response: aiResponse,
+      response: fallbackResponse,
       movieData: movieData,
-      suggestions: suggestions
-    });
-    
-  } catch (error) {
-    console.error('Error in /api/chat:', error);
-    res.status(500).json({ 
-      error: 'Sorry, I encountered an error. Please try again! 🎬'
+      suggestions: generateSuggestions(message, movieData),
+      error: true
     });
   }
 });
 
-// [Your existing functions: searchMovieData, extractMovieQuery, generateAIResponse, generateSuggestions remain the same]
-
+// TMDB movie search function
 async function searchMovieData(query) {
   if (!TMDB_API_KEY) return null;
   
@@ -84,27 +186,26 @@ async function searchMovieData(query) {
     const cleanQuery = extractMovieQuery(query);
     if (!cleanQuery) return null;
     
-    const response = await axios.get('https://api.themoviedb.org/3/search/movie', {
-      params: {
-        api_key: TMDB_API_KEY,
-        query: cleanQuery,
-        language: 'en-US'
-      },
+    const response = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanQuery)}&language=en-US`, {
+      method: 'GET',
       timeout: 8000
     });
     
-    if (response.data.results && response.data.results.length > 0) {
-      const movie = response.data.results;
+    if (!response.ok) return null;
+    
+    const data = await response.json();
+    
+    if (data.results && data.results.length > 0) {
+      const movie = data.results[0];
       
-      const detailResponse = await axios.get(`https://api.themoviedb.org/3/movie/${movie.id}`, {
-        params: {
-          api_key: TMDB_API_KEY,
-          append_to_response: 'credits'
-        },
+      const detailResponse = await fetch(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}&append_to_response=credits`, {
+        method: 'GET',
         timeout: 8000
       });
       
-      const details = detailResponse.data;
+      if (!detailResponse.ok) return null;
+      
+      const details = await detailResponse.json();
       
       return {
         title: details.title || 'Unknown',
@@ -125,6 +226,7 @@ async function searchMovieData(query) {
   }
 }
 
+// Extract movie query from user message
 function extractMovieQuery(message) {
   const lowerMessage = message.toLowerCase();
   
@@ -137,11 +239,8 @@ function extractMovieQuery(message) {
   return message.trim();
 }
 
-// TEMPORARY FALLBACK - No OpenRouter dependency
-async function generateAIResponse(message, movieData) {
-  console.log('🎬 Processing message:', message);
-  
-  // If we have movie data, create a response about it
+// Generate fallback response when AI fails
+function generateFallbackResponse(message, movieData) {
   if (movieData) {
     return `Great choice! **${movieData.title}** (${movieData.year}) is a fantastic ${movieData.genre} film directed by ${movieData.director}. 
 
@@ -154,7 +253,6 @@ ${movieData.plot}
 This movie is definitely worth watching! What would you like to know more about?`;
   }
   
-  // General movie responses based on keywords
   const lowerMessage = message.toLowerCase();
   
   if (lowerMessage.includes('horror') || lowerMessage.includes('scary')) {
@@ -179,18 +277,6 @@ What type of scares are you in the mood for? 👻`;
 What kind of humor makes you laugh? 🎭`;
   }
   
-  if (lowerMessage.includes('action')) {
-    return `💥 Action-packed recommendations coming up:
-
-• **Mad Max: Fury Road** (2015) - Non-stop vehicular mayhem
-• **John Wick** (2014) - Stylish revenge thriller
-• **Mission: Impossible - Fallout** (2018) - Tom Cruise at his most daring
-• **The Raid** (2011) - Indonesian martial arts masterpiece
-
-Ready for some adrenaline? 🚗💨`;
-  }
-  
-  // Default response
   return `🎬 Hi there! I'm MovieGPT, your friendly movie assistant. I can help you with:
 
 • **Movie recommendations** based on your mood
@@ -198,11 +284,10 @@ Ready for some adrenaline? 🚗💨`;
 • **Reviews and ratings** to help you decide what to watch
 • **Fun movie trivia** and behind-the-scenes facts
 
-Try asking me about a specific movie, actor, or tell me what genre you're in the mood for! 🍿
-
-What kind of movie experience are you looking for today?`;
+Try asking me about a specific movie, actor, or tell me what genre you're in the mood for! 🍿`;
 }
 
+// Generate suggestion buttons
 function generateSuggestions(message, movieData) {
   const suggestions = [];
   const lowerMessage = message.toLowerCase();
@@ -229,14 +314,22 @@ function generateSuggestions(message, movieData) {
   return suggestions.slice(0, 4);
 }
 
-// Serve index.html for all other routes (SPA behavior)
+// Serve static files for frontend (if index.html exists)
+app.use(express.static(path.resolve('.')));
+
+// Catch-all route for SPA
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  const indexPath = path.resolve('.', 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      res.status(404).json({ error: 'Frontend not found. Please deploy frontend separately.' });
+    }
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`🎬 MovieGPT server running on port ${PORT}`);
-  console.log(`🌐 URL: https://movie-gpt-v-pqsl.onrender.com`);
+  console.log(`🎬 MovieGPT Backend running on port ${PORT}`);
+  console.log(`🌐 Frontend: https://moviegpt.rf.gd`);
   console.log(`🔑 OpenRouter: ${OPENROUTER_API_KEY ? 'Configured ✅' : 'Missing ❌'}`);
   console.log(`🎭 TMDB: ${TMDB_API_KEY ? 'Configured ✅' : 'Missing ❌'}`);
 });
